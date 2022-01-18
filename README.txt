@@ -21,6 +21,41 @@ docker run --name keycloak --net keycloak-net \
            -d jboss/keycloak
 # -e KEYCLOAK_FRONTEND_URL=http://localhost:8080
 
+Exporting a realm:
+
+docker run --name kc --net keycloak-net \
+           -e KEYCLOAK_USER=admin -e KEYCLOAK_PASSWORD=secret \
+           -e DB_VENDOR=postgres -e DB_ADDR=kc_postgres:5432 -e DB_DATABASE=keycloak \
+           -e DB_USER=keycloak -e DB_PASSWORD=secret \
+           -v $(pwd):/tmp \
+           -p 8180:8080 \
+           jboss/keycloak
+
+docker exec -it kc /opt/jboss/keycloak/bin/standalone.sh \
+            -Djboss.socket.binding.port-offset=100 -Dkeycloak.migration.action=export \
+            -Dkeycloak.migration.provider=singleFile \
+            -Dkeycloak.migration.realmName=test \
+            -Dkeycloak.migration.usersExportStrategy=REALM_FILE \
+            -Dkeycloak.migration.file=/tmp/test-realm.json
+
+Importing a realm:
+
+docker run --name kc_pg --network keycloak-net -e POSTGRES_DB=keycloak \
+           -e POSTGRES_USER=keycloak -e POSTGRES_PASSWORD=secret \
+           -e PGDATA=/var/lib/postgresql/data \
+           -v $(pwd)/postgres_data:/var/lib/postgresql/data \
+           -d postgres:13-bullseye
+
+docker run --name kc --net keycloak-net \
+           -e KEYCLOAK_USER=admin -e KEYCLOAK_PASSWORD=secret \
+           -e DB_VENDOR=postgres -e DB_ADDR=kc_pg:5432 -e DB_DATABASE=keycloak \
+           -e DB_USER=keycloak -e DB_PASSWORD=secret \
+           -e KEYCLOAK_IMPORT=/tmp/test-realm.json \
+           -e JAVA_OPTS_APPEND="-Dkeycloak.profile.feature.upload_scripts=enabled" \
+           -v $(pwd)/test-realm.json:/tmp/test-realm.json \
+           -p 8080:8080 \
+           jboss/keycloak
+
 
 Setting up TLS
 ==============

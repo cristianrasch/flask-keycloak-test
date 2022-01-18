@@ -14,4 +14,5 @@ REDIRECT_URI = os.getenv('REDIRECT_URI',
                          f"{PREFERRED_URL_SCHEME}://{SERVER_NAME}/callback")
 ISSUER_ID = os.getenv('ISSUER_ID', 'https://localhost:8443/auth/realms/test/')
 TOKEN_ENDPOINT = os.getenv('TOKEN_ENDPOINT', 'protocol/openid-connect/token')
+CERTS_ENDPOINT = os.getenv('CERTS_ENDPOINT', 'protocol/openid-connect/certs')
 LOGOUT_ENDPOINT = os.getenv('LOGOUT_ENDPOINT', 'protocol/openid-connect/logout')

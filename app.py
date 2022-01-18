@@ -1,6 +1,9 @@
 import functools
+import json
+from datetime import datetime
 from urllib.parse import quote_plus, urljoin
 
+import jwt
 import requests
 from flask import Flask, abort, current_app, jsonify, make_response, redirect,\
                   render_template, request, session, url_for
@@ -15,16 +18,16 @@ app.config.from_object('settings')
 DEFAULT_VALUE['client_id'] = app.config['CLIENT_ID']
 DEFAULT_VALUE['client_secret'] = app.config['CLIENT_SECRET']
 DEFAULT_VALUE['redirect_uris'] = [app.config['REDIRECT_URI']]
-# DEFAULT_VALUE['behaviour'] = {
-#     'response_types': ['code'],
-#     'scope': ['openid', 'profile', 'email'],
-#     'token_endpoint_auth_method': ['client_secret_basic', 'client_secret_post'],
-# }
-BEHAVIOUR_ARGS = {
+DEFAULT_VALUE['behaviour'] = {
     'response_types': ['code'],
     'scope': ['openid', 'profile', 'email'],
     'token_endpoint_auth_method': ['client_secret_basic', 'client_secret_post'],
 }
+# BEHAVIOUR_ARGS = {
+#     'response_types': ['code'],
+#     'scope': ['openid', 'profile', 'email'],
+#     'token_endpoint_auth_method': ['client_secret_basic', 'client_secret_post'],
+# }
 BASE_URL = f"{app.config['PREFERRED_URL_SCHEME']}://{app.config['SERVER_NAME']}"
 RPH = RPHandler(BASE_URL, verify_ssl=False)
 
@@ -40,8 +43,9 @@ def home():
 
 @app.route("/login")
 def login():
-    info = RPH.begin(app.config['ISSUER_ID'].removesuffix('/'),
-                     behaviour_args=BEHAVIOUR_ARGS)
+    info = RPH.begin(app.config['ISSUER_ID'].removesuffix('/'))
+    # info = RPH.begin(app.config['ISSUER_ID'].removesuffix('/'),
+    #                  behaviour_args=BEHAVIOUR_ARGS)
     session['state'] = info['state']
 
     return redirect(info['url'])
@@ -71,6 +75,43 @@ def callback():
 
     return redirect(url_for('home'))
     # return jsonify(res)
+
+
+@app.route("/session")
+def inspect_session():
+    return jsonify(session)
+
+
+@app.route("/validate_access_token")
+def validate_access_token():
+    token = session['token']
+    header = jwt.get_unverified_header(token)
+    jwks_client = jwt.PyJWKClient(url_for('certs', _external=True))
+    signing_key = jwks_client.get_signing_key_from_jwt(token)
+
+    try:
+        data = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=header["alg"],
+            audience="account",
+            options={"verify_exp": True},
+        )
+        return jsonify(data)
+    except jwt.exceptions.ExpiredSignatureError:
+        expiration_date = datetime.fromtimestamp(json.loads(session['id_token'])['exp'])
+        return f'Access token expired on: {expiration_date}', 500
+
+
+@app.route("/certs")
+def certs():
+    resp = requests.get(
+        urljoin(app.config['ISSUER_ID'], app.config['CERTS_ENDPOINT']),
+        verify=False,
+    )
+    resp.raise_for_status()
+    res = resp.json()
+    return jsonify({'keys': [key for key in res['keys'] if key['use'] == 'sig']})
 
 
 def permission_required(permission):
