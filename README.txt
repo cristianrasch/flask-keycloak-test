@@ -163,8 +163,12 @@ curl -v -s -k \
   "active": true
 }
 
+
 Logging the user out
+====================
 
 For other browser applications, you can redirect the browser to
 http://auth-server/auth/realms/{realm-name}/protocol/openid-connect/logout?redirect_uri=encodedRedirectUri,
 which logs you out if you have an SSO session with your browser
+
+(don't forget to reset the browser session, clearing out all the cookies)
