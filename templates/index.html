@@ -1,5 +1,24 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <a href="{{ url_for('login') }}">Login</a>
+  {% if 'userinfo' in session %}
+    <p>Welcome back {{ session['userinfo']['name'] }}. This is all we know about you:</p>
+    <pre>
+      {{ session['userinfo']|tojson(indent=4) }}
+    </pre>
+
+    <p>Metadata about your access_token:</p>
+    <pre>
+      {{ session['id_token']|tojson(indent=4) }}
+    </pre>
+
+    <ul>
+      <li><a href="{{ url_for('admins') }}">Admins</a></li>
+      <li><a href="{{ url_for('users') }}">Users</a></li>
+    </ul>
+  {% else %}
+    <p>
+      Welcome anonymous user. Please <a href="{{ url_for('login') }}">login</a> to proceed.
+    </p>
+  {% endif %}
 {% endblock content %}

@@ -9,6 +9,7 @@ python = "^3.9"
 Flask = "^2.0.2"
 python-dotenv = "^0.19.2"
 oidcrp = "^2.1.3"
+requests = "^2.27.1"
 
 [tool.poetry.dev-dependencies]
 watchdog = "^2.1.6"
