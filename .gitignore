@@ -2,3 +2,4 @@
 certs/*
 private/*
 static/jwks.json
+pg_data

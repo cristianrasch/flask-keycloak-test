@@ -52,9 +52,7 @@ def callback():
     # import sys
     # from pprint import pprint
 
-    state_key = request.args['state']
-    assert request.args['state'] == session['state'], f"{state_key=} - {session['state']=}"
-    # rph = RPHandler(BASE_URL)
+    assert request.args['state'] == session['state'], f"{request.args['state']=} != {session['state']=}"
     # print('---', file=sys.stderr)
     # print('REQ ARGS:', file=sys.stderr)
     # pprint(request.args, stream=sys.stderr)
