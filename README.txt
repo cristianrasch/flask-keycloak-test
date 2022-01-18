@@ -7,9 +7,11 @@ docker network create keycloak-net
 docker run --name kc_postgres --network keycloak-net -e POSTGRES_DB=keycloak \
            -e POSTGRES_USER=keycloak -e POSTGRES_PASSWORD=secret \
            -e PGDATA=/var/lib/postgresql/data \
-           -v $(pwd)/pg_data:/var/lib/postgresql/data \
+           -v $(pwd)/postgres_data:/var/lib/postgresql/data \
            -d postgres:13-bullseye
 # docker exec -e PGPASSWORD=secret -it kc_postgres psql -U keycloak -d keycloak
+
+Bootstrap new installation:
 
 docker run --name keycloak --net keycloak-net \
            -e KEYCLOAK_USER=admin -e KEYCLOAK_PASSWORD=secret \
@@ -19,6 +21,20 @@ docker run --name keycloak --net keycloak-net \
            -v $(pwd)/certs:/etc/x509/https \
            -p 8080:8080 -p 8443:8443 \
            -d jboss/keycloak
+
+Restore realm backup:
+
+docker run --name keycloak --net keycloak-net \
+           -e KEYCLOAK_USER=admin -e KEYCLOAK_PASSWORD=secret \
+           -e DB_VENDOR=postgres -e DB_ADDR=kc_postgres:5432 -e DB_DATABASE=keycloak \
+           -e DB_USER=keycloak -e DB_PASSWORD=secret \
+           -e KEYCLOAK_STATISTICS=db,http \
+           -e KEYCLOAK_IMPORT=/tmp/test-realm.json \
+           -e JAVA_OPTS_APPEND="-Dkeycloak.profile.feature.upload_scripts=enabled" \
+           -v $(pwd)/certs:/etc/x509/https \
+           -v $(pwd)/backups/test_realm_2021-01-18.json:/tmp/test-realm.json \
+           -p 8080:8080 -p 8443:8443 \
+           jboss/keycloak
 # -e KEYCLOAK_FRONTEND_URL=http://localhost:8080
 
 Exporting a realm:
