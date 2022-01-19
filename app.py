@@ -1,7 +1,6 @@
 import functools
-import json
 from datetime import datetime
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 import jwt
 import requests
@@ -33,7 +32,7 @@ RPH = RPHandler(BASE_URL, verify_ssl=False)
 
 
 @app.route("/")
-def home():
+def index():
     return render_template('index.html')
     # if 'userinfo' in session:
     #     return redirect(url_for('users'))
@@ -47,33 +46,40 @@ def login():
     # info = RPH.begin(app.config['ISSUER_ID'].removesuffix('/'),
     #                  behaviour_args=BEHAVIOUR_ARGS)
     session['state'] = info['state']
+    url = info['url']
+    query_string = urlparse(url).query
+    qry_str_params = parse_qs(query_string)
+    session['nonce'] = qry_str_params['nonce'][0]
 
-    return redirect(info['url'])
+    return redirect(url)
 
 
 @app.route("/callback")
 def callback():
-    # import sys
-    # from pprint import pprint
+    import sys
+    from pprint import pprint
 
-    assert request.args['state'] == session['state'], f"{request.args['state']=} != {session['state']=}"
-    # print('---', file=sys.stderr)
-    # print('REQ ARGS:', file=sys.stderr)
-    # pprint(request.args, stream=sys.stderr)
+    session_state = session.pop('state')
+    assert request.args['state'] == session_state, f"{request.args['state']=} != {session_state=}"
+    print('---', file=sys.stderr)
+    print('REQ ARGS:', file=sys.stderr)
+    pprint(request.args, stream=sys.stderr)
     session_info = RPH.get_session_information(request.args['state'])
-    # print('SESSION INFO:', file=sys.stderr)
-    # pprint(session_info, stream=sys.stderr)
-    # print('---', file=sys.stderr)
+    print('SESSION INFO:', file=sys.stderr)
+    pprint(session_info.to_dict(), stream=sys.stderr)
     res = RPH.finalize(session_info['iss'], request.args)
-    # print('RES:', file=sys.stderr)
-    # pprint(res, stream=sys.stderr)
-    res['id_token'] = res.pop('id_token').to_json()
-    res['userinfo'] = res.pop('userinfo').to_json()
+    session_nonce = session.pop('nonce')
+    assert res['id_token']['nonce'] == session_nonce, f"{res['id_token']['nonce']=} != {session_nonce=}"
+    res['id_token'] = res.pop('id_token').to_dict()
+    res['userinfo'] = res.pop('userinfo').to_dict()
+    print('RES:', file=sys.stderr)
+    pprint(res, stream=sys.stderr)
+    print('---', file=sys.stderr)
 
     for k, v in res.items():
         session[k] = v
 
-    return redirect(url_for('home'))
+    return redirect(url_for('index'))
     # return jsonify(res)
 
 
@@ -82,25 +88,46 @@ def inspect_session():
     return jsonify(session)
 
 
-@app.route("/validate_access_token")
-def validate_access_token():
+def refresh_access_token_if_necessary():
     token = session['token']
     header = jwt.get_unverified_header(token)
     jwks_client = jwt.PyJWKClient(url_for('certs', _external=True))
     signing_key = jwks_client.get_signing_key_from_jwt(token)
+    data = {}
+    access_token_refreshed = False
 
-    try:
-        data = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=header["alg"],
-            audience="account",
-            options={"verify_exp": True},
-        )
+    while not data:
+        try:
+            return jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=header["alg"],
+                audience="account",
+                options={"verify_exp": True},
+            )
+        except jwt.exceptions.ExpiredSignatureError:
+            import sys
+            expiration_date = datetime.fromtimestamp(session['id_token']['exp'])
+            print('---', file=sys.stderr)
+            print(f'Access token expired on: {expiration_date}', file=sys.stderr)
+            print('---', file=sys.stderr)
+
+            if access_token_refreshed:
+                return data
+            else:
+                access_token_resp = RPH.refresh_access_token(session['state'])
+                session['token'] = token = access_token_resp['access_token']
+                for k, v in access_token_resp.get('__verified_id_token', {}).items():
+                    session['id_token'][k] = v
+                access_token_refreshed = True
+
+
+@app.route("/validate_access_token")
+def validate_access_token():
+    if data := refresh_access_token_if_necessary():
         return jsonify(data)
-    except jwt.exceptions.ExpiredSignatureError:
-        expiration_date = datetime.fromtimestamp(json.loads(session['id_token'])['exp'])
-        return f'Access token expired on: {expiration_date}', 500
+    else:
+        return redirect(url_for('index'))
 
 
 @app.route("/certs")
@@ -118,6 +145,8 @@ def permission_required(permission):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            refresh_access_token_if_necessary()
+
             resp = requests.post(
                 urljoin(app.config['ISSUER_ID'], app.config['TOKEN_ENDPOINT']),
                 data={
@@ -132,6 +161,7 @@ def permission_required(permission):
                 verify=False,
             )
             res = resp.json()
+
             if resp.status_code == 403:
                 return abort(make_response(jsonify(res), resp.status_code))
 
